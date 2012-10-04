@@ -1,0 +1,273 @@
+#!/bin/bash
+
+# Well, this file is amusing.
+#
+# Most of it is written by Evan Driscoll, and released under a BSD
+# license. Formally:
+#
+# ---------- BEGIN LICENSE -------------
+#
+# Copyright (c) 2012, Evan Driscoll <driscoll@cs.wisc.edu>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# ------------ END LICENSE --------------
+#
+#
+# However, the Ruby code contained in the heredoc below is written by Peter
+# Hutterer and licensed under the GPL v2 or later. It is included from his
+# splitpatch.rb script, obtained from
+# http://www.clearchain.com/~benjsc/download/splitpatch/splitpatch.rb via
+# http://www.clearchain.com/blog/posts/splitting-a-patch. The actual file is
+# also included in the third-party directory of the commit-patch repository.
+#
+# ----------- BEGIN LICENSE DECLARATION ------------
+#
+# Copyright (C) 2007, Peter Hutterer <peter@cs.unisa.edu.au>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+#
+# ----------- END LICENSE -------------
+#
+#
+# The splitpatch code is included inline in this file so that this script
+# doesn't have to figure out where it lives. (It also makes distribution a
+# little easier.)
+
+
+#######
+# Some configurable variables
+
+# What directory is used for temporary working space
+TMP_ROOT=/tmp
+TMP_DIR="$TMP_ROOT"/commit-patch-$$.tmp
+
+# The filename (put in the current directory) for the backup diff
+BAK_FILENAME=.diff-commit-patch-$$
+
+# The subversion command
+SVN=svn
+
+# Where to find lsdiff
+LSDIFF=/unsup/patchutils/bin/lsdiff
+
+
+########
+# Now actual code
+
+# Remember the directory we're in now
+REPO_DIR=$(pwd)
+
+# Get a diff
+"$SVN" diff > "$BAK_FILENAME"
+
+# Now split up the hunks
+mkdir -p "$TMP_DIR"
+cd "$TMP_DIR"
+cat > splitfile.rb <<PETER_HUTTERER_SPLITPATCH_GPL
+class Splitter
+   def initialize(file)
+       @filename = file
+    end
+
+    def validFile?
+        return File.exist?(@filename) && File.readable?(@filename)
+    end
+
+    # Split the patchfile by files 
+    def splitByFile
+        outfile = nil
+        stream = open(@filename)
+        until (stream.eof?)
+            line = stream.readline
+
+            # we need to create a new file
+            if (line =~ /--- .*/) == 0
+                if (outfile) 
+                    outfile.close_write
+                end
+                #find filename
+                tokens = line.split(" ")
+                tokens = tokens[1].split(":")
+                tokens = tokens[0].split("/")
+                filename = tokens[-1]
+                filename << ".patch"
+                if File.exists?(filename)
+                    puts "File #{filename} already exists. Renaming patch."
+                    appendix = 0
+                    while File.exists?("#{filename}.#{appendix}")
+                        appendix += 1
+                    end
+                    filename << ".#{appendix}"
+                end
+                outfile = open(filename, "w")
+                outfile.write(line)
+            else
+                if outfile
+                    outfile.write(line)
+                end
+            end
+        end
+    end
+
+    def splitByHunk
+        outfile = nil
+        stream = open(@filename)
+        filename = ""
+        counter = 0
+        header = ""
+        until (stream.eof?)
+            line = stream.readline
+
+            # we need to create a new file
+            if (line =~ /--- .*/) == 0
+                #find filename
+                tokens = line.split(" ")
+                tokens = tokens[1].split(":")
+                tokens = tokens[0].split("/")
+                filename = tokens[-1]
+                header = line
+                # next line is header too
+                line = stream.readline
+                header << line
+                counter = 0
+            elsif (line =~ /@@ .* @@/) == 0
+                if (outfile) 
+                    outfile.close_write
+                end
+                hunkfilename = "#{filename}.#{counter}.patch"
+                if File.exists?(hunkfilename)
+                    puts "File #{hunkfilename} already exists. Renaming patch."
+                    appendix = 0
+                    while File.exists?("#{hunkfilename}.#{appendix}")
+                        appendix += 1
+                    end
+                    hunkfilename << ".#{appendix}"
+                end
+                outfile = open(hunkfilename, "w")
+                counter += 1
+
+                outfile.write(header)
+                outfile.write(line)
+            else
+                if outfile
+                    outfile.write(line)
+                end
+            end
+        end
+    end
+
+end
+
+
+########################     MAIN     ########################
+
+
+if ARGV.length < 1 or ARGV.length > 2
+    puts "Wrong parameter. Usage: splitpatch.rb [--hunks] <patchfile>"
+    exit 1
+elsif ARGV[0] == "--help"
+    puts "splitpatch splits a patch that is supposed to patch multiple files"
+    puts "into a set of patches."
+    puts "Currently splits unified diff patches."
+    puts "If the --hunk option is given, a new file is created for each hunk."
+    exit 1
+else
+    s = Splitter.new(ARGV[-1])
+    if s.validFile?
+        if ARGV[0] == "--hunks"
+            s.splitByHunk
+        else
+            s.splitByFile
+        end
+    else
+        puts "File does not exist or is not readable"
+    end
+end
+PETER_HUTTERER_SPLITPATCH_GPL
+ruby splitfile.rb --hunks "$REPO_DIR/$BAK_FILENAME"
+rm splitfile.rb
+
+
+
+# Now revert the repository. It'd be nice to just do 'svn revert --recursive
+# .' but I'm wary about how certain changes will show up in 'svn diff' and
+# that this could lead to data loss.
+cd "$REPO_DIR"
+for patch in "$TMP_DIR/"*.0.patch;
+do
+    for file in $("$LSDIFF" "$patch");
+    do
+        svn revert "$file"
+    done
+done
+
+
+# Now ask whether to apply each patch
+for patch in "$TMP_DIR"/*.patch;
+do
+    echo
+    cat "$patch"
+
+    while true
+    do
+        echo -n "Apply? [y/n] "
+        read CONFIRM
+        case $CONFIRM in
+            y|Y) patch -p0 < "$patch"
+                 rm "$patch"
+                 break ;;
+            n|N) break ;;
+            *) ;;
+        esac
+    done
+done
+
+
+# Now commit
+svn commit
+
+
+# Now re-apply the remaining patches
+for patch in "$TMP_DIR"/*.patch;
+do
+    patch -p0 < "$patch"
+    rm "$patch"
+done
+
+
+# Delete stuff
+rmdir "$TMP_DIR"
