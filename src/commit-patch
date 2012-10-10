@@ -2,7 +2,7 @@
 
 # Well, this file is amusing.
 #
-# Most of it is written by Evan Driscoll, and released under a BSD
+# The shell portions are written by Evan Driscoll, and released under a BSD
 # license. Formally:
 #
 # ---------- BEGIN LICENSE -------------
@@ -35,7 +35,8 @@
 # ------------ END LICENSE --------------
 #
 #
-# However, the Ruby code contained in the heredoc below is written by Peter
+# However, the Ruby code contained in the heredoc below (between the two
+# occurrences of 'PETER_HUTTERER_SPLITPATCH_GPL' below) is written by Peter
 # Hutterer and licensed under the GPL v2 or later. It is included from his
 # splitpatch.rb script, obtained from
 # http://www.clearchain.com/~benjsc/download/splitpatch/splitpatch.rb via
