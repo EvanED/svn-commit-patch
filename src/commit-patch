@@ -244,11 +244,13 @@ do
 
     while true
     do
-        echo -n "Apply? [y/n] "
+        echo -n "Apply? [y/n/r] "
         read CONFIRM
         case $CONFIRM in
             y|Y) patch -p0 < "$patch"
                  rm "$patch"
+                 break ;;
+            r|R) rm "$patch"
                  break ;;
             n|N) break ;;
             *) ;;
